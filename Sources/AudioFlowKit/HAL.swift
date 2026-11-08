@@ -56,7 +56,8 @@ public enum HAL {
         var addr = address
         var value = initial
         var size = UInt32(MemoryLayout<T>.size)
-        try check(AudioObjectGetPropertyData(object, &addr, 0, nil, &size, &value),
+        let status = withUnsafeMutablePointer(to: &value) { AudioObjectGetPropertyData(object, &addr, 0, nil, &size, $0) }
+        try check(status,
                   "get \(fourCC(OSStatus(bitPattern: address.mSelector))) on \(object)")
         return value
     }

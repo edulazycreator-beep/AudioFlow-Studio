@@ -58,8 +58,9 @@ public enum AudioFlowDriver {
         let plugIn = try plugInID()
         var addr = HAL.address(configSelector)
         var plist: CFPropertyList = ["names": config.names, "enabled": config.enabled] as NSDictionary
-        try check(AudioObjectSetPropertyData(plugIn, &addr, 0, nil, UInt32(MemoryLayout<CFPropertyList>.size), &plist),
-                  "write AudioFlow config")
+        let size = UInt32(MemoryLayout<CFPropertyList>.size)
+        let status = withUnsafePointer(to: &plist) { AudioObjectSetPropertyData(plugIn, &addr, 0, nil, size, $0) }
+        try check(status, "write AudioFlow config")
     }
 
     /// AudioFlow devices currently published by the driver.

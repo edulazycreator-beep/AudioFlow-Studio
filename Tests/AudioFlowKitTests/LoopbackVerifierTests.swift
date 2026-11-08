@@ -37,7 +37,18 @@ final class LoopbackVerifierTests: XCTestCase {
 
     func testChannelSwapIsDetected() {
         var v = LoopbackVerifier()
+        // Swapped channels put the inverted ramp on the left, which breaks continuity.
         feed(&v, frames: 1..<100, swap: true)
+        XCTAssertGreaterThan(v.continuityErrors, 0)
+        XCTAssertFalse(v.passed)
+    }
+
+    func testCrosstalkIsDetected() {
+        var v = LoopbackVerifier()
+        for n in UInt64(1)..<100 {
+            let l = LoopbackSignal.left(n)
+            v.consume(left: l, right: -l + 0.25)  // right channel carries something else
+        }
         XCTAssertGreaterThan(v.channelErrors, 0)
         XCTAssertFalse(v.passed)
     }
