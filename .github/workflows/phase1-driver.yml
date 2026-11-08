@@ -1,0 +1,114 @@
+name: Phase 1 · Virtual driver
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+          uname -m
+
+      - name: Build driver (Universal 2)
+        run: bash scripts/build-driver.sh 0.1.0 ${{ github.run_number }}
+
+      - name: Unit tests
+        run: swift test
+
+      - name: Build afctl (Universal 2)
+        run: |
+          swift build -c release --arch arm64 --arch x86_64
+          cp .build/apple/Products/Release/afctl build/afctl
+          lipo -info build/afctl
+
+      - name: Install driver
+        run: bash scripts/install-driver.sh
+
+      - name: Driver loads and publishes 6 devices
+        run: |
+          for i in $(seq 1 20); do
+            if build/afctl check; then exit 0; fi
+            sleep 1
+          done
+          echo "Driver did not come up"; exit 1
+
+      - name: Devices visible system-wide
+        run: |
+          build/afctl list --all
+          system_profiler SPAudioDataType | grep -A6 "AudioFlow" || true
+
+      - name: Sample rates 44.1 / 48 / 88.2 / 96 kHz
+        run: |
+          for d in 0 5; do
+            for r in 44100 48000 88200 96000; do build/afctl set-rate $d $r; done
+            build/afctl set-rate $d 48000
+          done
+
+      - name: Rename, disable and persistence across coreaudiod restart
+        run: |
+          set -e
+          build/afctl rename 2 "CI Renamed Device"
+          build/afctl disable 5
+          build/afctl check
+          build/afctl list | grep -q "CI Renamed Device"
+          if build/afctl list | grep -q AudioFlowDevice_5; then echo "device 5 still published"; exit 1; fi
+          sudo killall coreaudiod; sleep 4
+          for i in $(seq 1 20); do build/afctl config >/dev/null 2>&1 && break; sleep 1; done
+          build/afctl config
+          build/afctl config | grep -q "CI Renamed Device"
+          build/afctl config | grep -qE "^5[[:space:]]+disabled"
+          build/afctl reset-config
+          sleep 1
+          build/afctl check
+          test "$(build/afctl list | wc -l | tr -d ' ')" = "6"
+
+      - name: Grant microphone permission (CI only, best effort)
+        run: bash scripts/ci-grant-microphone.sh "$PWD/build/afctl"
+
+      - name: Loopback — all six devices at 48 kHz
+        run: |
+          for d in 0 1 2 3 4 5; do build/afctl loopback-test --device $d --seconds 4 --rate 48000; done
+
+      - name: Loopback — 44.1 and 96 kHz
+        run: |
+          build/afctl loopback-test --device 0 --seconds 4 --rate 44100
+          build/afctl loopback-test --device 0 --seconds 4 --rate 96000
+          build/afctl set-rate 0 48000
+
+      - name: Soak — 60 s loopback
+        run: build/afctl loopback-test --device 1 --seconds 60 --rate 48000
+
+      - name: coreaudiod log on failure
+        if: failure()
+        run: |
+          log show --last 10m --predicate 'process == "coreaudiod"' --style compact 2>/dev/null \
+            | grep -iE "audioflow|plug-?in|HAL" | tail -200 || true
+
+      - name: Package artifacts
+        if: always()
+        run: |
+          mkdir -p dist
+          [ -d build/AudioFlowDriver.driver ] && ditto -c -k --keepParent build/AudioFlowDriver.driver dist/AudioFlowDriver.driver.zip
+          [ -f build/afctl ] && cp build/afctl dist/
+          cp scripts/install-driver.sh scripts/uninstall-driver.sh dist/
+          ls -la dist
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: AudioFlow-Phase1-${{ github.run_number }}
+          path: dist/
