@@ -32,9 +32,14 @@ sed -e "s/__VERSION__/$VERSION/" -e "s/__BUILD__/$BUILD/" \
   "$ROOT/Driver/Info.plist" > "$BUNDLE/Contents/Info.plist"
 plutil -lint "$BUNDLE/Contents/Info.plist"
 
-# Ad-hoc signature unless a Developer ID identity is provided.
+# Ad-hoc signature for development/CI. With a Developer ID identity, sign with
+# hardened runtime and a secure timestamp (required for notarization).
 IDENTITY="${CODESIGN_IDENTITY:--}"
-codesign --force --timestamp=none --options runtime --sign "$IDENTITY" "$BUNDLE"
+if [ "$IDENTITY" = "-" ]; then
+  codesign --force --sign - "$BUNDLE"
+else
+  codesign --force --timestamp --options runtime --sign "$IDENTITY" "$BUNDLE"
+fi
 codesign --verify --strict --verbose=2 "$BUNDLE"
 
 lipo -info "$BUNDLE/Contents/MacOS/AudioFlowDriver"

@@ -46,6 +46,17 @@ jobs:
           ls -la /Library/Audio/Plug-Ins/HAL/
           codesign -dv --verbose=2 /Library/Audio/Plug-Ins/HAL/AudioFlowDriver.driver 2>&1 || true
           plutil -p /Library/Audio/Plug-Ins/HAL/AudioFlowDriver.driver/Contents/Info.plist
+          echo "== reference: NullAudio signature =="
+          codesign -dv --verbose=2 /Library/Audio/Plug-Ins/HAL/NullAudio.driver 2>&1 || true
+          echo "== crash reports =="
+          ls -la /Library/Logs/DiagnosticReports ~/Library/Logs/DiagnosticReports 2>/dev/null | grep -iE "audio|driver" || echo "(none)"
+          for f in $(ls /Library/Logs/DiagnosticReports/*Core*Audio*Driver* ~/Library/Logs/DiagnosticReports/*Core*Audio*Driver* 2>/dev/null); do
+            echo "--- $f"; head -c 6000 "$f"; echo
+          done
+          echo "== driver helper process log =="
+          log show --last 3m --style compact --predicate 'process CONTAINS "Core Audio Driver" OR process CONTAINS "DriverHelper" OR (process == "coreaudiod" AND eventMessage CONTAINS "Remote")' 2>/dev/null | tail -80 || true
+          echo "== AMFI / library validation =="
+          log show --last 3m --style compact --predicate 'eventMessage CONTAINS "AudioFlowDriver" OR (process == "kernel" AND eventMessage CONTAINS "Library Validation")' 2>/dev/null | tail -40 || true
           echo "== audio processes =="
           ps axo pid,comm | grep -iE "coreaudio|Core Audio Driver|Driver-Service|audio" | grep -v grep || true
           echo "== all devices =="
