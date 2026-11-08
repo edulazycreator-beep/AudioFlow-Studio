@@ -35,22 +35,6 @@ jobs:
           cp .build/apple/Products/Release/afctl build/afctl
           lipo -info build/afctl
 
-      - name: "Experiment: does coreaudiod accept an ad-hoc signed plug-in?"
-        continue-on-error: true
-        run: |
-          plutil -p /Library/Audio/Plug-Ins/HAL/NullAudio.driver/Contents/Info.plist
-          sudo rm -rf /tmp/NullAdhoc.driver
-          cp -R /Library/Audio/Plug-Ins/HAL/NullAudio.driver /tmp/NullAdhoc.driver
-          plutil -replace CFBundleIdentifier -string com.audioflow.experiment.nulladhoc /tmp/NullAdhoc.driver/Contents/Info.plist
-          codesign --remove-signature /tmp/NullAdhoc.driver/Contents/MacOS/NullAudio
-          codesign --force --sign - /tmp/NullAdhoc.driver
-          codesign -dv /tmp/NullAdhoc.driver 2>&1 | grep -E "Signature|flags"
-          sudo cp -R /tmp/NullAdhoc.driver /Library/Audio/Plug-Ins/HAL/
-          sudo chown -R root:wheel /Library/Audio/Plug-Ins/HAL/NullAdhoc.driver
-          sudo killall coreaudiod; sleep 5
-          log show --last 1m --style compact --predicate 'process == "coreaudiod" AND eventMessage CONTAINS "driver service"' 2>/dev/null | grep -E "NullAdhoc|NullAudio" | tail -10
-          sudo rm -rf /Library/Audio/Plug-Ins/HAL/NullAdhoc.driver
-
       - name: Install driver
         run: bash scripts/install-driver.sh
 
