@@ -35,8 +35,15 @@ public enum AudioFlowDriver {
         let status = withUnsafeMutablePointer(to: &bundle) { qualifier in
             AudioObjectGetPropertyData(HAL.systemObject, &addr, UInt32(MemoryLayout<CFString>.size), qualifier, &size, &id)
         }
-        if status != noErr || id == kAudioObjectUnknown { throw HALError.notFound("AudioFlow driver (\(bundleID))") }
-        return id
+        if status == noErr && id != kAudioObjectUnknown { return id }
+
+        // Fallback: the owner of any AudioFlow device is the plug-in object.
+        if let device = try? devices().first,
+           let owner = try? HAL.get(device.id, HAL.address(kAudioObjectPropertyOwner), initial: AudioObjectID(0)),
+           owner != kAudioObjectUnknown {
+            return owner
+        }
+        throw HALError.notFound("AudioFlow driver (\(bundleID)); bundle lookup status \(status)")
     }
 
     public static var isInstalled: Bool { (try? plugInID()) != nil }

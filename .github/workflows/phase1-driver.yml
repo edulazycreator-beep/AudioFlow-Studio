@@ -38,6 +38,23 @@ jobs:
       - name: Install driver
         run: bash scripts/install-driver.sh
 
+      - name: Diagnostics after install
+        if: always()
+        run: |
+          sleep 3
+          echo "== installed bundle =="
+          ls -la /Library/Audio/Plug-Ins/HAL/
+          codesign -dv --verbose=2 /Library/Audio/Plug-Ins/HAL/AudioFlowDriver.driver 2>&1 || true
+          plutil -p /Library/Audio/Plug-Ins/HAL/AudioFlowDriver.driver/Contents/Info.plist
+          echo "== audio processes =="
+          ps axo pid,comm | grep -iE "coreaudio|Core Audio Driver|Driver-Service|audio" | grep -v grep || true
+          echo "== all devices =="
+          build/afctl list --all || true
+          echo "== unified log mentioning AudioFlow (all processes) =="
+          log show --last 3m --style compact --predicate 'eventMessage CONTAINS[c] "AudioFlow" OR eventMessage CONTAINS[c] "AudioFlowDriver"' 2>/dev/null | tail -80 || true
+          echo "== HAL plug-in loader messages =="
+          log show --last 3m --style compact --predicate '(process == "coreaudiod" OR process CONTAINS "Core Audio Driver" OR process CONTAINS "Driver-Service") AND (eventMessage CONTAINS[c] "plug" OR eventMessage CONTAINS[c] "load" OR eventMessage CONTAINS[c] "sign" OR eventMessage CONTAINS[c] "error")' 2>/dev/null | grep -v AXHearing | tail -80 || true
+
       - name: Driver loads and publishes 6 devices
         run: |
           for i in $(seq 1 20); do
